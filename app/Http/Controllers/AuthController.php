@@ -6,56 +6,54 @@ use App\Mail\SendOtpMail;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use App\Models\User;
-// use Carbon\Carbon;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Mail;
 
-use function Symfony\Component\Clock\now;
 
 class AuthController extends Controller
 {
     public function register(Request $request)
     {
         $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255',
+            'name'     => 'required|string|max:255',
+            'email'    => 'required|string|email|max:255',
             'password' => 'required|string|min:6',
         ]);
+
         $user = User::where('email', $request->email)->first();
 
         if ($user) {
             if ($user->is_verify) {
                 return response()->json([
                     'message' => 'User already exists and verified',
-                    'user' => $user->email
+                    'user'    => $user->email
                 ], 400);
             }
+
+            $otp = rand(1000, 9999);
+            Cache::put('otp_' . $user->email, $otp, Carbon::now()->addMinutes(10));
+            Mail::to($user->email)->send(new SendOtpMail($otp));
+
+            return response()->json([
+                'message' => 'OTP resent to email',
+            ], 200);
         }
 
         $otp = rand(1000, 9999);
 
         $user = User::create([
-            'name' => $request->name,
-            'email' => $request->email,
-            'password' => Hash::make($request->password),
-            'is_verify' => false
+            'name'      => $request->name,
+            'email'     => $request->email,
+            'password'  => Hash::make($request->password),
+            'is_verify' => false,
         ]);
 
-        Cache::put('otp_' . $request->email, $otp, Carbon::now()->addMinutes(10));
-        Mail::to($request->email)->send(new SendOtpMail($otp));
+        Cache::put('otp_' . $user->email, $otp, Carbon::now()->addMinutes(10));
+        Mail::to($user->email)->send(new SendOtpMail($otp));
 
         return response()->json([
             'message' => 'OTP sent to email',
-            'otp' => $otp
-        ], 200);
-
-        Cache::put('otp_' . $request->email, $otp, Carbon::now()->addMinutes(10));
-        Mail::to($request->email)->send(new SendOtpMail($otp));
-
-        return response()->json([
-            'message' => 'User registered successfully',
-            'user' => $user
         ], 201);
     }
 

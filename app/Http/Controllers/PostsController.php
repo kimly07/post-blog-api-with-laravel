@@ -10,19 +10,25 @@ use PHPUnit\Logging\OpenTestReporting\Status;
 
 class PostsController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $posts = Posts::all();
+        $userId = $request->user() ? $request->user()->id : null;
+
+        $posts = Posts::with(['user', 'reactions'])->latest()->get()->map(function ($post) use ($userId) {
+            $post->is_liked = $post->reactions->contains('user_id', $userId);
+
+            return $post;
+        });
+
         return response()->json([
             'status' => 'success',
             'data' => $posts
         ]);
-        return view('posts.index', ['posts' => $posts]);
     }
 
     public function show($id)
     {
-        $post = Posts::findOrFail($id);
+        $post = Posts::with('user')->findOrFail($id);
         return response()->json([
             'status' => 'success',
             'data' => $post
@@ -31,38 +37,48 @@ class PostsController extends Controller
 
     public function store(Request $request)
     {
-        $request->validate([
+        $validated = $request->validate([
             'title' => 'required|string|max:255',
-            'image' => 'required|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
-            // 'body' => 'required|string',
+            'body' => 'required|string',
+            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
         ]);
 
-        $data = $request->all();
-
         if ($request->hasFile('image')) {
-            $path = $request->file('image')->store('images', 'public');
-            $data['image_url'] = $path;
+            $path = $request->file('image')->store('posts', 'public');
+            $validated['image_url'] = $path;
         }
-        $post = Posts::create($data);
+
+
+        $post = $request->user()->posts()->create($validated);
 
         return response()->json([
             'status' => 'success',
-            'data' => $post
-        ], 201);
+            'message' => 'Post created successfully!',
+            'data' => $post->load('user')
+        ]);
     }
 
     public function update(Request $request, $id)
     {
         $post = Posts::findOrFail($id);
 
+        if ($post->user_id !== $request->user()->id) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized'
+            ], 403);
+        }
+
         $request->validate(
             [
+                'title' => 'sometimes|required|string|max:255',
+                'body' => 'sometimes|required|string',
                 'image' => 'sometimes|required|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
 
             ]
         );
 
-        $data = $request->all();
+        $data = $request->except('image');
 
         if ($request->hasFile('image')) {
 
@@ -75,9 +91,10 @@ class PostsController extends Controller
                 ]);
             }
 
-            $path = $request->file('image')->store('image', 'public');
+            $path = $request->file('image')->store('images', 'public');
             $data['image_url'] = $path;
         }
+
         $post->update($data);
 
         return response()->json([
@@ -88,10 +105,12 @@ class PostsController extends Controller
 
     public function delete($id)
     {
-        $post = Posts::findOrFail($id);
-
-        if ($post->image_url) {
-            Storage::disk('public')->delete($post->image_url);
+        $post = Posts::where('id', $id)->where('user_id', auth()->id())->first();
+        if (!$post) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Post not found or unauthorized'
+            ], 404);
         }
 
         $post->delete();

@@ -7,6 +7,7 @@ use App\Http\Controllers\PostsController;
 use App\Models\User;
 use App\Notifications\SendSmsNotification;
 use Illuminate\Support\Facades\Notification;
+use App\Http\Controllers\ReactionController;
 
 Route::get('/user', function (Request $request) {
     return $request->user();
@@ -36,18 +37,16 @@ Route::post('verify-otp', [AuthController::class, 'verifyOtp']);
 
 Route::post('logins', [AuthController::class, 'login'])->name('login');
 
-Route::post('logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
-
-Route::get('posts', [PostsController::class, 'index']);
-
-Route::post('store', [PostsController::class, 'store']);
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('posts', [PostsController::class, 'index']);
+    Route::post('store', [PostsController::class, 'store']);
+    Route::patch('update/{id}', [PostsController::class, 'update']);
+    Route::delete('delete/{id}', [PostsController::class, 'delete']);
+    Route::post('logout', [AuthController::class, 'logout']);
+    Route::post('posts/{id}/react', [ReactionController::class, 'toggleReact']);
+});
 
 Route::get('posts/{id}', [PostsController::class, 'show']);
-
-Route::patch('update/{id}', [PostsController::class, 'update']);
-
-Route::delete('delete/{id}', [PostsController::class, 'delete']);
-
 
 Route::middleware('auth:sanctum')->get('/admin/users', function() {
     $user = auth()->user();
